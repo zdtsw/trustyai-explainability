@@ -12,9 +12,14 @@ import org.kie.trustyai.explainability.model.*;
 public class PayloadParser {
 
     public static PredictionInput inputTensorToPredictionInput(ModelInferRequest.InferInputTensor tensor,
-            List<String> inputNames) {
+            List<String> inputNames) throws IllegalArgumentException {
         final InferTensorContents responseInputContents = tensor.getContents();
-        final KServeDatatype type = KServeDatatype.valueOf(tensor.getDatatype());
+        final KServeDatatype type;
+        try {
+            type = KServeDatatype.valueOf(tensor.getDatatype());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Currently unsupported type for Tensor input, type=" + tensor.getDatatype());
+        }
         switch (type) {
             case BOOL:
                 return inputFromContentList(responseInputContents.getBoolContentsList(), Type.BOOLEAN, inputNames);
@@ -25,18 +30,23 @@ public class PayloadParser {
             case INT64:
                 return inputFromContentList(responseInputContents.getInt64ContentsList(), Type.NUMBER, inputNames);
             case FP32:
+                return inputFromContentList(responseInputContents.getFp32ContentsList(), Type.NUMBER, inputNames);
             case FP64:
                 return inputFromContentList(responseInputContents.getFp64ContentsList(), Type.NUMBER, inputNames);
             default:
-                throw new IllegalArgumentException("Currently unsupported type for Tensor input.");
+                throw new IllegalArgumentException("Currently unsupported type for Tensor input, type=" + tensor.getDatatype());
         }
     }
 
     public static PredictionOutput outputTensorToPredictionOutput(ModelInferResponse.InferOutputTensor tensor,
-            List<String> outputNames) {
+            List<String> outputNames) throws IllegalArgumentException {
         final InferTensorContents responseOutputContents = tensor.getContents();
-
-        final KServeDatatype type = KServeDatatype.valueOf(tensor.getDatatype());
+        final KServeDatatype type;
+        try {
+            type = KServeDatatype.valueOf(tensor.getDatatype());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Currently unsupported type for Tensor output, type=" + tensor.getDatatype());
+        }
 
         switch (type) {
             case BOOL:
@@ -48,10 +58,11 @@ public class PayloadParser {
             case INT64:
                 return outputFromContentList(responseOutputContents.getInt64ContentsList(), Type.NUMBER, outputNames);
             case FP32:
+                return outputFromContentList(responseOutputContents.getFp32ContentsList(), Type.NUMBER, outputNames);
             case FP64:
                 return outputFromContentList(responseOutputContents.getFp64ContentsList(), Type.NUMBER, outputNames);
             default:
-                throw new IllegalArgumentException("Currently unsupported type for Tensor output.");
+                throw new IllegalArgumentException("Currently unsupported type for Tensor output, type=" + tensor.getDatatype());
         }
     }
 

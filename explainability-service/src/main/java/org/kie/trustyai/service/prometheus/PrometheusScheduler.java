@@ -1,8 +1,9 @@
 package org.kie.trustyai.service.prometheus;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
@@ -10,7 +11,6 @@ import javax.inject.Singleton;
 
 import org.jboss.logging.Logger;
 import org.kie.trustyai.explainability.model.Dataframe;
-import org.kie.trustyai.service.config.ServiceConfig;
 import org.kie.trustyai.service.data.DataSource;
 import org.kie.trustyai.service.data.exceptions.DataframeCreateException;
 import org.kie.trustyai.service.endpoints.metrics.MetricsCalculator;
@@ -29,8 +29,6 @@ public class PrometheusScheduler {
     @Inject
     PrometheusPublisher publisher;
     @Inject
-    ServiceConfig serviceConfig;
-    @Inject
     MetricsCalculator calculator;
 
     public Map<UUID, BaseMetricRequest> getDirRequests() {
@@ -45,25 +43,32 @@ public class PrometheusScheduler {
     void calculate() {
 
         if (hasRequests()) {
+
             try {
-                final Dataframe df = dataSource.get().getDataframe();
+                for (final String modelId : getModelIds()) {
 
-                // SPD requests
-                if (!spdRequests.isEmpty()) {
-                    spdRequests.forEach((uuid, request) -> {
+                    final Predicate<Map.Entry<UUID, BaseMetricRequest>> filterByModelId = request -> request.getValue().getModelId().equals(modelId);
 
-                        final double spd = calculator.calculateSPD(df, request);
-                        publisher.gaugeSPD(request, serviceConfig.modelName(), uuid, spd);
+                    final Dataframe df = dataSource.get().getDataframe(modelId);
+                    final List<Map.Entry<UUID, BaseMetricRequest>> modelSpdRequest =
+                            spdRequests.entrySet().stream().filter(filterByModelId).collect(Collectors.toList());
+
+                    // SPD requests
+                    modelSpdRequest.forEach(entry -> {
+                        final double spd = calculator.calculateSPD(df, entry.getValue());
+                        publisher.gaugeSPD(entry.getValue(), modelId, entry.getKey(), spd);
                     });
-                }
 
-                // DIR requests
-                if (!dirRequests.isEmpty()) {
-                    dirRequests.forEach((uuid, request) -> {
+                    final List<Map.Entry<UUID, BaseMetricRequest>> modelDirRequest =
+                            dirRequests.entrySet().stream().filter(filterByModelId).collect(Collectors.toList());
 
-                        final double dir = calculator.calculateDIR(df, request);
-                        publisher.gaugeDIR(request, serviceConfig.modelName(), uuid, dir);
+                    // DIR requests
+
+                    modelDirRequest.forEach(entry -> {
+                        final double dir = calculator.calculateDIR(df, entry.getValue());
+                        publisher.gaugeDIR(entry.getValue(), modelId, entry.getKey(), dir);
                     });
+
                 }
             } catch (DataframeCreateException e) {
                 LOG.error(e.getMessage());
@@ -85,5 +90,17 @@ public class PrometheusScheduler {
 
     public boolean hasRequests() {
         return !(spdRequests.isEmpty() && dirRequests.isEmpty());
+    }
+
+    /**
+     * Get unique model ids with registered Prometheus metrics
+     * 
+     * @return Unique models ids
+     */
+    public Set<String> getModelIds() {
+        return Stream.of(spdRequests.values(), dirRequests.values())
+                .flatMap(Collection::stream)
+                .map(BaseMetricRequest::getModelId)
+                .collect(Collectors.toSet());
     }
 }

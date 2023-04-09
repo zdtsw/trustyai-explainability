@@ -27,14 +27,12 @@ import org.kie.trustyai.service.payloads.scheduler.ScheduleList;
 import org.kie.trustyai.service.payloads.scheduler.ScheduleRequest;
 import org.kie.trustyai.service.payloads.spd.GroupStatisticalParityDifferenceResponse;
 import org.kie.trustyai.service.prometheus.PrometheusScheduler;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.kie.trustyai.service.validators.ValidBaseMetricRequest;
 
 @Tag(name = "Statistical Parity Difference Endpoint", description = "Statistical Parity Difference (SPD) measures imbalances in classifications by calculating the " +
         "difference between the proportion of the majority and protected classes getting a particular outcome.")
 @Path("/metrics/spd")
-public class GroupStatisticalParityDifferenceEndpoint extends AbstractMetricsEndpoint {
+public class GroupStatisticalParityDifferenceEndpoint implements MetricsEndpoint {
 
     private static final Logger LOG = Logger.getLogger(GroupStatisticalParityDifferenceEndpoint.class);
     @Inject
@@ -77,10 +75,10 @@ public class GroupStatisticalParityDifferenceEndpoint extends AbstractMetricsEnd
 
         final Dataframe dataframe;
         try {
-            dataframe = dataSource.get().getDataframe();
+            dataframe = dataSource.get().getDataframe(request.getModelId());
         } catch (DataframeCreateException e) {
             LOG.error("No data available: " + e.getMessage(), e);
-            return Response.serverError().build();
+            return Response.serverError().status(Response.Status.BAD_REQUEST).entity("No data available").build();
         }
 
         final double spd;
@@ -88,7 +86,7 @@ public class GroupStatisticalParityDifferenceEndpoint extends AbstractMetricsEnd
             spd = calculator.calculateSPD(dataframe, request);
         } catch (MetricCalculationException e) {
             LOG.error("Error calculating metric: " + e.getMessage(), e);
-            return Response.serverError().status(Response.Status.INTERNAL_SERVER_ERROR).build();
+            return Response.serverError().status(Response.Status.BAD_REQUEST).entity("Error calculating metric").build();
         }
         final String definition = calculator.getSPDDefinition(spd, request);
 
@@ -118,7 +116,7 @@ public class GroupStatisticalParityDifferenceEndpoint extends AbstractMetricsEnd
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     @Path("/request")
-    public String createaRequest(BaseMetricRequest request) throws JsonProcessingException {
+    public Response createaRequest(@ValidBaseMetricRequest BaseMetricRequest request) {
 
         final UUID id = UUID.randomUUID();
 
@@ -127,8 +125,7 @@ public class GroupStatisticalParityDifferenceEndpoint extends AbstractMetricsEnd
         final BaseScheduledResponse response =
                 new BaseScheduledResponse(id);
 
-        ObjectMapper mapper = new ObjectMapper();
-        return mapper.writeValueAsString(response);
+        return Response.ok().entity(response).build();
     }
 
     @DELETE
